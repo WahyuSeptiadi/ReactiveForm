@@ -1,112 +1,89 @@
 package com.codeart.reactiveform
 
+import android.annotation.SuppressLint
 import android.os.Bundle
-import android.text.Editable
-import android.text.TextWatcher
 import android.util.Patterns
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.codeart.reactiveform.databinding.ActivityMainBinding
+import com.jakewharton.rxbinding2.widget.RxTextView
+import io.reactivex.Observable
 
 class MainActivity : AppCompatActivity() {
 
-    private var emailValid = false
-    private var passwordValid = false
-    private var passwordConfirmationValid = false
-
     private lateinit var binding: ActivityMainBinding
 
+    @SuppressLint("CheckResult")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        validateButton()
-
-        binding.edEmail.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) {
+        // untuk mengamati email
+        val emailStream = RxTextView.textChanges(binding.edEmail)
+            .skipInitialValue()
+            .map { email ->
+                !Patterns.EMAIL_ADDRESS.matcher(email).matches()
             }
-
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
-            }
-
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                validateEmail()
-            }
-        })
-
-        binding.edPassword.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) {
-            }
-
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
-            }
-
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                validatePassword()
-            }
-        })
-
-        binding.edConfirmPassword.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) {
-            }
-
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
-            }
-
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                validatePasswordConfirmation()
-            }
-        })
-    }
-
-    fun validateEmail() {
-        // jika password tidak valid tampilkan peringatan
-        val input = binding.edEmail.text.toString()
-        if (!Patterns.EMAIL_ADDRESS.matcher(input).matches()) {
-            emailValid = false
-            showEmailExistAlert(true)
-        } else {
-            emailValid = true
-            showEmailExistAlert(false)
+        emailStream.subscribe {
+            showEmailExistAlert(it)
         }
-        validateButton()
-    }
 
-    fun validatePassword() {
-        // jika password < 6 karakter tampilkan peringatan
-        val input = binding.edPassword.text.toString()
-        if (input.length < 6) {
-            passwordValid = false
-            showPasswordMinimalAlert(true)
-        } else {
-            passwordValid = true
-            showPasswordMinimalAlert(false)
+        // untuk mengamati password
+        val passwordStream = RxTextView.textChanges(binding.edPassword)
+            .skipInitialValue()
+            .map { password ->
+                password.length < 6
+            }
+        passwordStream.subscribe {
+            showPasswordMinimalAlert(it)
         }
-        validateButton()
-    }
 
-    fun validatePasswordConfirmation() {
-        // jika konfirmasi password tidak sesuai tampilkan peringatan
-        val input = binding.edConfirmPassword.text.toString()
-        if (input != binding.edPassword.text.toString()) {
-            passwordConfirmationValid = false
-            showPasswordConfirmationAlert(true)
-        } else {
-            passwordConfirmationValid = true
-            showPasswordConfirmationAlert(false)
+        // untuk mengamati konfirmasi password dengan cara merge pada ed_password dan ed_confirm_password
+        val passwordConfirmationStream = Observable.merge(
+            RxTextView.textChanges(binding.edPassword)
+                .map { password ->
+                    password.toString() != binding.edConfirmPassword.text.toString()
+                },
+            RxTextView.textChanges(binding.edConfirmPassword)
+                .map { confirmPassword ->
+                    confirmPassword.toString() != binding.edPassword.text.toString()
+                }
+        )
+        passwordConfirmationStream.subscribe {
+            showPasswordConfirmationAlert(it)
         }
-        validateButton()
-    }
 
-    private fun validateButton() {
-        // jika semua field sudah terisi, enable button submit
-        if (emailValid && passwordValid && passwordConfirmationValid) {
-            binding.btnRegister.isEnabled = true
-            binding.btnRegister.setBackgroundColor(ContextCompat.getColor(this, R.color.purple_500))
-        } else {
-            binding.btnRegister.isEnabled = false
-            binding.btnRegister.setBackgroundColor(ContextCompat.getColor(this, android.R.color.darker_gray))
+        // untuk ON / OFF tombol register
+        val invalidFieldsStream = Observable.combineLatest(
+            emailStream,
+            passwordStream,
+            passwordConfirmationStream,
+            { emailInvalid: Boolean, passwordInvalid: Boolean, passwordConfirmationInvalid: Boolean ->
+                !emailInvalid && !passwordInvalid && !passwordConfirmationInvalid
+            })
+        invalidFieldsStream.subscribe { isValid ->
+            if (isValid) {
+                binding.btnRegister.isEnabled = true
+                binding.btnRegister.setBackgroundColor(
+                    ContextCompat.getColor(
+                        this,
+                        R.color.purple_500
+                    )
+                )
+                binding.btnRegister.setOnClickListener {
+                    Toast.makeText(this, "Mantaapss Sluurr :)", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                binding.btnRegister.isEnabled = false
+                binding.btnRegister.setBackgroundColor(
+                    ContextCompat.getColor(
+                        this,
+                        android.R.color.darker_gray
+                    )
+                )
+            }
         }
     }
 
@@ -119,6 +96,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showPasswordConfirmationAlert(isNotValid: Boolean) {
-        binding.edConfirmPassword.error = if (isNotValid) getString(R.string.password_not_same) else null
+        binding.edConfirmPassword.error =
+            if (isNotValid) getString(R.string.password_not_same) else null
     }
 }
